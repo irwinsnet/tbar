@@ -1,0 +1,12 @@
+Package: tbar
+Type: Package
+Title: Retreives Data from The Blue Alliance Read API
+Version: 0.1.0
+Author: Stacy Irwin
+Maintainer: Stacy Irwin <ski165@outlook.com>
+Description: The tbar package provides functions that retrieve FIRST Robotics
+    Competition (FRC) data from the Blue Alliance's READ API (Version 3).
+    The data is provided as tibble objects or named lists.
+License: MIT + file LICENSE
+Encoding: UTF-8
+LazyData: true
