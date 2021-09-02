@@ -1,19 +1,21 @@
 # Internal TbaR functions
 #
-# Stacy Irwin, 23 Aug 2021
-
-# library(httr)
-# library(purrr)
-library(magrittr)
+# Dependencies:
+#   httr
+#   keyring
+#   magrittr
+#   purrr
+#
+# Stacy Irwin, 1 Sep 2021
 
 
 #' Assembles command that will be sent to the TBA Read API
 #'
-#' `.BuildAPICall()` builds a correctly-formatted TBA command that can be
+#' `.BuildApiCommand()` builds a correctly-formatted TBA command that can be
 #' sent to *The Blue Alliance's* (TBA) Read API, version 3. It accepts two
-#' arguments: a list of TBA API calls and a character vector with arguments
-#' supplied by the user. `.BuildAPICall()` builds a correctly-formatted TBA
-#' command from these two objects.
+#' arguments: a list of TBA API templates and a character vector with
+#' arguments supplied by the user. `.BuildAPICommand()` builds a
+#' correctly-formatted TBA command from these two objects.
 #'
 #' ## TBA Commands
 #' The command is the latter portion of the URL. Specifically, it is
@@ -46,10 +48,12 @@ library(magrittr)
 #' list("{year}" = c("districts", "{year}"),
 #'      "{team_key}" = c("team", "{team_key}", "districts")
 #' )
-#' #' # GetMatches() API Calls
-#' list("{team_key}{event_key}" = c("team", "{team_key}", "event", "{event_key}",
+#' # GetMatches() API Calls
+#' list("{team_key}{event_key}" = c("team", "{team_key}",
+#'                                  "event", "{event_key}",
 #'                                  "matches"),
-#'      "{event_key}{team_key}" = c("team", "{team_key}", "event", "{event_key}",
+#'      "{event_key}{team_key}" = c("team", "{team_key}",
+#'                                  "event", "{event_key}",
 #'                                  "matches")
 #' )
 #' ```
@@ -67,8 +71,8 @@ library(magrittr)
 #' order of the arguments when they call `GetMatches()`.
 #'
 #' ## Arguments
-#' Arguments are passed to .BuildApiCall() as a named character vector. For
-#' example:
+#' Arguments are passed to `.BuildApiCommand()` as a named character vector.
+#' For example:
 #'
 #' `c("{team_key} = "frc1318", "{event_key}" = "2020wasno")`
 #'
@@ -85,29 +89,29 @@ library(magrittr)
 #'
 #' @param args A named character vector containing parameter-argument
 #'   pairs.
-#' @param api_calls A named list containing TBA API calls.
+#' @param api_templates A named list containing TBA API calls.
 #' @param extent Optional. A string that should be "full", "simple",
 #'   or "keys". Defaults to "full".
 #'
 #' @return The TBA command as a length-one character vector.
-.BuildApiCall <- function(args, api_calls, extent = "full") {
+.BuildApiCommand <- function(args, api_templates, extent = "full") {
   # Build API call name
   parameters <- names(args)
-  api_call_name <- paste0(parameters, collapse = "")
+  api_template_name <- paste0(parameters, collapse = "")
 
   # Select API call that corresponds to user-supplied arguments
-  api_call <- api_calls[[api_call_name]]
+  api_template <- api_templates[[api_template_name]]
 
   # Add extent option
-  if(tolower(extent) %in% c("simple", "keys")) {
-    api_call <- append(api_call, tolower(extent))
+  if (tolower(extent) %in% c("simple", "keys")) {
+    api_template <- append(api_template, tolower(extent))
   }
 
   # Replace parameters with arguments and convert to string
   for (arg_name in parameters) {
-    api_call[api_call == arg_name] <- args[arg_name]
+    api_template[api_template == arg_name] <- args[arg_name]
   }
-  api_call %>%
+  api_template %>%
     paste(collapse = "/") %>%
     return()
 }
@@ -124,7 +128,7 @@ library(magrittr)
 #'
 #' @return A named character vector, where the values are the original
 #'   argument and the names are the parameter. The return value can
-#'   be passed to `.BuildApiCall()`'s *args* parameter.
+#'   be passed to `.BuildApiCommand()`'s *args* parameter.
 .ClassifyArgs <- function(arg_list) {
   arg_list %>%
     purrr::map(.ClassifyArg) %>%
@@ -145,44 +149,42 @@ library(magrittr)
 #'   argument and the name is the parameter.
 #'
 #' @examples
-#' .ClassifyArg("frc1318") # Returns c("{team_key" = "frc1318")
-#' .ClassifyArg("2020wasno") # Returns c("{event_key" = "2020wasno")
+#' .ClassifyArg("frc1318") # Returns c("{team_key}" = "frc1318")
+#' .ClassifyArg("2020wasno") # Returns c("{event_key}" = "2020wasno")
 .ClassifyArg <- function(arg) {
+
+  .CheckYear <- function(arg) {
+    year_arg <- as.integer(substr(arg, 1, 4))
+    if (year_arg < 1992 || year_arg > lubridate::year(lubridate::today())) {
+      stop("Year must be between 1992 and current year.")
+    }
+    return(TRUE)
+  }
+
   arg_str <- arg %>% as.character() %>% tolower()
 
-  # Check for team_key, such as "frc1318".
-  if (grepl(r"(^\s*frc\d{1,4}$)", arg_str, perl = TRUE)){
-    return(c("{team_key}" = arg_str))
+  if (grepl(r"(^frc\d{1,5}$)", arg_str, perl = TRUE)) { # Teams
+    classified_arg <- c("{team_key}" = arg_str)
+  } else if (grepl(r"(^\d{4}$)", arg_str, perl = TRUE)) { # Years
+    .CheckYear(arg_str)
+    classified_arg <- c("{year}" = arg_str)
+  } else if (grepl(r"(^\d{1,3}$)", arg_str, perl = TRUE)) { # Page numbers
+    classified_arg <- c("{page_num}" = arg_str)
+  } else if (grepl(r"(^\d{4}\w{3}$)", arg_str, perl = TRUE)) { # Districts
+    .CheckYear(arg_str)
+    classified_arg <- c("{district_key}" = arg_str)
+  } else if (grepl(r"(^\d{4}[a-z]{4,}_(qm\d{1,3}|(qf|sf|f)\dm\d)$)", # Matches
+                arg_str,
+                perl = TRUE)) {
+    .CheckYear(arg_str)
+    classified_arg <- c("{match_key}" = arg_str)
+  } else if (grepl(r"(^\d{4}[a-z]{4,}$)", arg_str, perl = TRUE)) { # Events
+    .CheckYear(arg_str)
+    classified_arg <- c("{event_key}" = arg_str)
+  } else {
+    stop("Argument must be 4-digit year or key (team, district, event, etc.).")
   }
-  # Check for year between 1992 and current year.
-  if (grepl(r"(^20\d{2}$)", arg_str, perl = TRUE)) {
-    arg_int <- as.integer(arg_str)
-    if (arg_int >= 1992 && arg_int <= year(today())) {
-      return(c("{year}" = arg_str))
-    } else {
-      stop(paste("Year argument,", arg_str, "must be between 1992",
-                 "and current year."))
-    }
-  }
-  # Check for page_num
-  if (grepl(r"(^\d{1,3}$)", arg_str, perl = TRUE)) {
-    return(c("{page_num}" = arg_str))
-  }
-  # Check for district key. All district keys have only 3 letters.
-  if (grepl(r"(^20\d{2}\w{3}$)", arg_str, perl = TRUE)) {
-    return(c("{district_key}" = arg_str))
-  }
-  # Check for match key, e.g., "2020wasno_qm20", "2020waspo_qf2m1".
-  match_ptn <- r"(^20\d{2}\w{4,}_(qm\d{1,3}|(qf|sf|f)\dm\d)$)"
-  if (grepl(match_ptn, arg_str, perl = TRUE)) {
-    return(c("{match_key}" = arg_str))
-  }
-  # Check for event key. All event keys have 4 or more letters.
-  if (grepl(r"(^20\d{2}\w{4,}$)", arg_str, perl = TRUE)) {
-    return(c("{event_key}" = arg_str))
-  }
-
-  stop("Argument must be 4-digit year or key (team, district, event or match).")
+  return(classified_arg)
 }
 
 
@@ -190,12 +192,14 @@ library(magrittr)
 #'
 #' @param arg_list A list of TBA arguments.
 #' @param api_calls A list of API calls.
+#' @param extent Either "full", "simple", or "keys". Specifies the number
+#'   of columns that will be returned.
 #'
 #' @return The JSON text returned from the TBA API.
 .CallTBA <- function(arg_list, api_calls, extent = "full") {
   arg_list %>%
     .ClassifyArgs() %>%
-    .BuildApiCall(api_calls, extent) %>%
+    .BuildApiCommand(api_calls, extent) %>%
     .SendRequest() %>%
     return()
 }
@@ -214,6 +218,7 @@ library(magrittr)
 #'
 #' @param url_path Text that is added to the base TBA URL that specifies
 #'   the TBA command.
+#' @param key_service The name of the key, as stored by the keyring package.
 #'
 #' @return A named list with the following elements:
 #'   * text: The content of the HTTP response.
@@ -221,16 +226,11 @@ library(magrittr)
 #'   * date: The date and time when the data was retrieved from TBA.
 #'   * last_modified: The content of the HTTP response's last-modified
 #'     header, showing when the TBA data was last updated.
-#'
-#' @examples
-#' keyring::key_set("tba_auth_key")
-#' district_json <- .SendRequest("districts/2021")
 .SendRequest <- function(url_path, key_service = "tba_auth_key") {
   # User can include backslash as path separator, or not, up to them
-  if (substr(url_path, 1, 1) != "/") url_path = paste0("/", url_path)
+  if (substr(url_path, 1, 1) != "/") url_path <- paste0("/", url_path)
   base_url <- "https://www.thebluealliance.com/api/v3"
   url <- paste0(base_url, url_path)
-  print(url)  ## DEBUG ##
   headers <- httr::add_headers(
     "X-TBA-Auth-Key" = keyring::key_get(key_service),
     "User-Agent" = "TbaR: R SDK for TBA Read API")

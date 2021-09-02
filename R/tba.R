@@ -1,9 +1,12 @@
-
-library(lubridate)
-library(magrittr)
-library(tidyr)
-
-source("R/http.R", echo = FALSE)
+# Exported functions for retrieving Blue Alliance data.
+#
+# Dependencies:
+#   dplyr
+#   jsonlite
+#   lubridate
+#   tibble
+#
+# Stacy Irwin, 1 Sep 2021
 
 
 #' Retrieves the status of the TBA Read API (V3)
@@ -38,12 +41,12 @@ GetStatus <- function() {
 #' GetDistricts(2019)
 #' GetDistricts("frc2976")
 GetDistricts <- function(year_or_teamkey) {
-  api_calls <- list(
+  api_templates <- list(
     "{year}" = c("districts", "{year}"),
     "{team_key}" = c("team", "{team_key}", "districts")
   )
 
-  tba_resp <- .CallTBA(year_or_teamkey, api_calls)
+  tba_resp <- .CallTBA(year_or_teamkey, api_templates)
   tba_resp$text %>%
     jsonlite::fromJSON() %>%
     tibble::as_tibble() %>%
@@ -53,7 +56,7 @@ GetDistricts <- function(year_or_teamkey) {
 
 
 GetTeams <- function(..., extent = "full") {
- api_calls <- list(
+ api_templates <- list(
    "{district_key}" = c("district", "{district_key}", "teams"),
    "{event_key}" = c("event", "{event_key}", "teams"),
    "{page_num}" = c("teams", "{page_num}"),
@@ -61,7 +64,7 @@ GetTeams <- function(..., extent = "full") {
    "{page_num}{year}" = c("teams", "{year}", "{page_num}")
  )
 
-   tba_resp <- .CallTBA(list(...), api_calls, extent)
+   tba_resp <- .CallTBA(list(...), api_templates, extent)
    tba_resp$text %>%
      jsonlite::fromJSON(flatten = TRUE) %>%
      tibble::as_tibble() %>%
@@ -70,7 +73,7 @@ GetTeams <- function(..., extent = "full") {
 
 
 GetMatches <- function(..., extent = "full") {
-  api_calls <- list(
+  api_templates <- list(
     "{team_key}{event_key}" = c("team", "{team_key}", "event", "{event_key}",
                                 "matches"),
     "{event_key}{team_key}" = c("team", "{team_key}", "event", "{event_key}",
@@ -80,11 +83,11 @@ GetMatches <- function(..., extent = "full") {
     "{year}{team_key}" = c("team", "{team_key}", "matches", "{year}")
   )
 
-  tba_resp <- .CallTBA(list(...), api_calls, extent)
+  tba_resp <- .CallTBA(list(...), api_templates, extent)
   tba_resp$text %>%
     jsonlite::fromJSON(flatten = TRUE) %>%
     tibble::as_tibble() %>%
-    dplyr::mutate(across(ends_with("_time"), .ConvertUnixTsColumn)) %>%
+    dplyr::mutate(dplyr::across(dplyr::ends_with("_time"), .ConvertUnixTsColumn)) %>%
     .UnnestColumn("alliances.blue.team_keys") %>%
     .UnnestColumn("alliances.red.team_keys") %>%
     .AddHTTPAttributes(tba_resp) %>%
@@ -95,7 +98,7 @@ GetMatches <- function(..., extent = "full") {
 
 #' Gets data for a single FRC match.
 #'
-#' @param match A match key, e.g., 2020wasno_qm_42
+#' @param match_key A match key, e.g., 2020wasno_qm_42
 #' @param extent Either "full" or "simple".
 #'
 #' @return A named list.
@@ -104,13 +107,13 @@ GetMatches <- function(..., extent = "full") {
 #' @examples
 #' GetMatch("2020waspo_qf2m1")
 GetMatch <- function(match_key, extent = "full") {
-  api_calls <- list("{match_key}" = c("match", "{match_key}"))
+  api_templates <- list("{match_key}" = c("match", "{match_key}"))
   if (tolower(extent) == "keys") {
     stop("GetMatch does not accept `extent = 'keys' option.")
   }
 
   # Single match JSON does not parse well. Will take some work.
-  tba_resp <- .CallTBA(list(match_key), api_calls, extent)
+  tba_resp <- .CallTBA(list(match_key), api_templates, extent)
   tba_resp$text %>%
     jsonlite::fromJSON() %>%
     .AddHTTPAttributes(tba_resp) %>%
@@ -145,7 +148,7 @@ GetMatch <- function(match_key, extent = "full") {
 #' @return A dataframe
 .UnnestColumn <- function(dframe, col_name) {
   if (col_name %in% names(dframe)) {
-    return(unnest_wider(dframe, col_name, names_sep = "."))
+    return(tidyr::unnest_wider(dframe, col_name, names_sep = "."))
   } else {
     return(dframe)
   }
@@ -162,15 +165,3 @@ GetMatch <- function(match_key, extent = "full") {
   attributes(dframe) <- c(attributes(dframe), tba_response[-1])
   return(dframe)
 }
-
-
-
-
-
-
-
-
-
-
-
-

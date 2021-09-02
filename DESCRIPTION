@@ -10,3 +10,14 @@ Description: The tbar package provides functions that retrieve FIRST Robotics
 License: MIT + file LICENSE
 Encoding: UTF-8
 LazyData: true
+RoxygenNote: 7.1.1
+Imports: 
+    dplyr,
+    httr,
+    jsonlite,
+    keyring,
+    lubridate,
+    magrittr,
+    purrr,
+    tibble,
+    tidyr
